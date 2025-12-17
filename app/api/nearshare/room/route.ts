@@ -35,7 +35,10 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: 'Room already exists' }, { status: 409 });
             }
             // Sanitize: Convert empty empty string to undefined so optional validator works
-            const payload: any = { name };
+            const payload: any = { 
+                name,
+                lastActive: new Date()
+            };
             if (password && password.trim().length > 0) {
                  payload.password = password;
             }

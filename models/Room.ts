@@ -16,7 +16,11 @@ const RoomSchema = new mongoose.Schema({
   createdAt: { 
     type: Date, 
     default: Date.now,
-    expires: 86400 // 24 hours TTL
+  },
+  lastActive: {
+      type: Date,
+      default: Date.now,
+      expires: 7200 // 2 hours TTL from LAST ACTIVE
   }
 });
 

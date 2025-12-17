@@ -57,6 +57,7 @@ export default function SharePage() {
   };
   
   const handleLogout = () => {
+    //@ts-ignore
       setNetworkHash(null); // Clears hash, kicks to lobby
       localStorage.removeItem('nearshare_room'); // Clear persistent session
       window.history.replaceState(null, '', '/share'); // Clear URL param

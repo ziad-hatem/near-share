@@ -12,8 +12,8 @@ const ActiveSessionSchema: Schema = new Schema({
   networkHash: { type: String, required: true, index: true },
   displayName: { type: String, required: true },
   fingerprint: { type: String },
-  lastActive: { type: Date, default: Date.now },
-  createdAt: { type: Date, default: Date.now, expires: 3600 }, // TTL 1 hour
+  lastActive: { type: Date, default: Date.now, expires: 7200 }, // 2 hours sliding TTL
+  createdAt: { type: Date, default: Date.now },
 });
 
 // Check if model already exists to prevent overwrite error in HMR
