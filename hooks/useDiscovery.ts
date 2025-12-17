@@ -57,6 +57,9 @@ export const useDiscovery = () => {
         setFingerprint(storedFp);
         setDisplayName(storedName);
 
+        // API Route Initialization (Serverless Pattern)
+        await fetch('/api/socket');
+
         // Connect to Socket
         const newSocket = io({
           path: '/socket.io',
