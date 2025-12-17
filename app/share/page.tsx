@@ -22,7 +22,10 @@ export default function SharePage() {
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [joinTab, setJoinTab] = useState<'scan' | 'code' | 'share'>('scan');
   
-  const { transferState, startSender, acceptFile, declineFile } = useFileTransfer(selectedUser || undefined);
+  const { transferState, startSender, broadcastFile, acceptFile, declineFile } = useFileTransfer(selectedUser || undefined);
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { addMessage } = useNearShareStore();
@@ -180,15 +183,33 @@ export default function SharePage() {
         </div>
 
         <div className="flex items-center gap-4">
-            {/* Share Network (QR Code) - NEW */}
+            {/* Network ID Display */}
             {networkHash && (
-                <button 
-                  onClick={() => setIsJoinModalOpen(true)}
-                  className="hidden md:flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white px-4 py-2 rounded-full font-bold shadow-lg shadow-emerald-900/20 active:scale-95 transition-all"
-                >
-                    <Smartphone className="w-4 h-4" />
-                    <span className="text-xs uppercase tracking-wider">Join / Share</span>
-                </button>
+                 <>
+                    {/* Broadcast Button */}
+                    <div className="hidden md:flex relative group/broadcast">
+                        <button 
+                            onClick={() => {
+                                // Pre-select everyone other than me
+                                const others = activeUsers.filter(u => u.socketId !== socketId).map(u => u.socketId);
+                                setSelectedRecipients(new Set(others));
+                                setIsBroadcastModalOpen(true);
+                            }}
+                            className="cursor-pointer flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white px-5 py-2 rounded-full font-bold shadow-lg shadow-cyan-900/20 active:scale-95 transition-all"
+                        >
+                            <Upload className="w-4 h-4" />
+                            <span className="text-xs uppercase tracking-wider">Broadcast</span>
+                        </button>
+                    </div>
+
+                    <button 
+                      onClick={() => setIsJoinModalOpen(true)}
+                      className="hidden md:flex items-center gap-2 bg-[#1f1f2e] hover:bg-[#2a2a3d] border border-white/10 text-gray-300 hover:text-white px-4 py-2 rounded-full font-bold shadow-lg transition-all ml-2"
+                    >
+                        <Smartphone className="w-4 h-4" />
+                        <span className="text-xs uppercase tracking-wider">Join</span>
+                    </button>
+                 </>
             )}
 
             {/* Network ID Display */}
@@ -747,6 +768,100 @@ export default function SharePage() {
                                     <p className="text-gray-500 text-xs uppercase tracking-wider font-bold">Network ID</p>
                                 </div>
                             )}
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+         </AnimatePresence>
+
+          {/* BROADCAST SELECTION MODAL */}
+          <AnimatePresence>
+            {isBroadcastModalOpen && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md"
+                    onClick={(e) => {
+                         if (e.target === e.currentTarget) setIsBroadcastModalOpen(false);
+                    }}
+                >
+                    <motion.div
+                        initial={{ scale: 0.9, y: 20 }}
+                        animate={{ scale: 1, y: 0 }}
+                        exit={{ scale: 0.9, y: 20 }}
+                        className="bg-[#12121a] border border-white/10 w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+                    >
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Upload className="w-5 h-5 text-cyan-400" /> Broadcast File
+                            </h3>
+                            <button onClick={() => setIsBroadcastModalOpen(false)}><X className="w-6 h-6 text-gray-400 hover:text-white" /></button>
+                        </div>
+
+                        <div className="p-6 flex-1 overflow-y-auto">
+                             <p className="text-sm text-gray-400 mb-4">Select recipients:</p>
+                             <div className="space-y-2">
+                                 {activeUsers.filter(u => u.socketId !== socketId).length === 0 ? (
+                                     <p className="text-center text-gray-500 py-8">No other users in room.</p>
+                                 ) : (
+                                     activeUsers.filter(u => u.socketId !== socketId).map(user => (
+                                         <div 
+                                            key={user.socketId}
+                                            onClick={() => {
+                                                const newSet = new Set(selectedRecipients);
+                                                if (newSet.has(user.socketId)) newSet.delete(user.socketId);
+                                                else newSet.add(user.socketId);
+                                                setSelectedRecipients(newSet);
+                                            }}
+                                            className={cn(
+                                                "flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all",
+                                                selectedRecipients.has(user.socketId) 
+                                                    ? "bg-cyan-500/10 border-cyan-500/50 shadow-lg shadow-cyan-900/10" 
+                                                    : "bg-white/5 border-white/5 hover:bg-white/10"
+                                            )}
+                                         >
+                                             <div className="flex items-center gap-3">
+                                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center font-bold text-white">
+                                                     {user.displayName.charAt(0)}
+                                                 </div>
+                                                 <div>
+                                                     <p className={cn("font-bold text-sm", selectedRecipients.has(user.socketId) ? "text-cyan-400" : "text-gray-300")}>{user.displayName}</p>
+                                                     <p className="text-xs text-gray-500 font-mono">{user.networkHash.slice(0,6)}</p>
+                                                 </div>
+                                             </div>
+                                             <div className={cn(
+                                                 "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
+                                                 selectedRecipients.has(user.socketId) ? "bg-cyan-500 border-cyan-500" : "border-gray-600"
+                                             )}>
+                                                 {selectedRecipients.has(user.socketId) && <div className="w-2 h-2 bg-black rounded-full" />}
+                                             </div>
+                                         </div>
+                                     ))
+                                 )}
+                             </div>
+                        </div>
+
+                        <div className="p-6 border-t border-white/5 bg-black/20">
+                            <input 
+                                type="file" 
+                                className="hidden" 
+                                ref={fileInputRef}
+                                onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                        broadcastFile(e.target.files[0], Array.from(selectedRecipients));
+                                        setIsBroadcastModalOpen(false);
+                                    }
+                                }}
+                            />
+                            <button 
+                                disabled={selectedRecipients.size === 0}
+                                onClick={() => fileInputRef.current?.click()}
+                                className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold shadow-lg shadow-cyan-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                            >
+                                <span>Select File & Send to {selectedRecipients.size} Device{selectedRecipients.size !== 1 && 's'}</span>
+                                <Upload className="w-4 h-4" />
+                            </button>
                         </div>
                     </motion.div>
                 </motion.div>
