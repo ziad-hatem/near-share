@@ -138,6 +138,35 @@ export default function SharePage() {
         </div>
 
         <div className="flex items-center gap-4">
+            {/* Share Network (QR Code) - NEW */}
+            {networkHash && (
+                <button 
+                  onClick={() => {
+                      const url = `${window.location.origin}/share?room=${networkHash}`;
+                      import('qrcode').then(QRCode => {
+                          QRCode.toDataURL(url, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
+                            .then(dataUrl => {
+                                // Create simple modal approach (or specific state)
+                                const win = window.open("", "_blank", "width=400,height=500");
+                                if(win) {
+                                    win.document.write(`
+                                        <body style="background:#111; color:white; font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0;">
+                                            <h2 style="margin-bottom:20px;">Scan to Join</h2>
+                                            <img src="${dataUrl}" style="border-radius:10px; border:4px solid white; box-shadow:0 0 20px rgba(0,255,255,0.5);" />
+                                            <p style="margin-top:20px; font-family:monospace; background:#222; padding:10px; border-radius:5px;">Code: ${networkHash.slice(0,6)}...</p>
+                                        </body>
+                                    `);
+                                }
+                            });
+                      });
+                  }}
+                  className="hidden md:flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white px-4 py-2 rounded-full font-bold shadow-lg shadow-emerald-900/20 active:scale-95 transition-all"
+                >
+                    <Smartphone className="w-4 h-4" />
+                    <span className="text-xs uppercase tracking-wider">Share Net</span>
+                </button>
+            )}
+
             {/* Network ID Display */}
             {networkHash && (
                 <div className="hidden md:flex flex-col items-end mr-4">

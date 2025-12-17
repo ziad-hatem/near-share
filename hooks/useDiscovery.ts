@@ -32,11 +32,19 @@ export const useDiscovery = () => {
 
     const init = async () => {
       try {
-        const res = await fetch('/api/nearshare/ip');
-        const { ip } = await res.json();
-        
-        const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ip))
-          .then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
+        // Check for ?room= override
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomFromUrl = urlParams.get('room');
+
+        let hash;
+        if (roomFromUrl) {
+            hash = roomFromUrl;
+        } else {
+            const res = await fetch('/api/nearshare/ip');
+            const { ip } = await res.json();
+            hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ip))
+              .then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
+        }
 
         setNetworkHash(hash); // Set initial hash
 
