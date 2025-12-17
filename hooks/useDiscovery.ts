@@ -113,33 +113,49 @@ export const useDiscovery = () => {
       }
   }, [socket, currentHash, currentName, currentFp, setIsDiscoveryActive, setMyself]);
 
-  // 3. Update Sync & Polling Fallback
+  // 4. Vercel Optimization: REST Heartbeat (Bypasses Socket Limits)
   useEffect(() => {
-      if (socket && currentName) {
-          localStorage.setItem(STORAGE_KEY_NAME, currentName);
-          socket.emit('update-user', { displayName: currentName });
-      }
+      if (!currentHash || !currentName) return;
 
-      // Polling fallback for Vercel/Serverless environments where sockets might split
-      // We only poll if we have a hash and users, checking the socket state isn't enough?
-      if (currentHash) {
-          const poll = setInterval(async () => {
-              try {
-                  const res = await fetch(`/api/nearshare/room?room=${currentHash}`);
-                  if (res.ok) {
-                      const data = await res.json();
-                      if (Array.isArray(data)) {
-                          setUsers(data);
-                      } else if (data.users && Array.isArray(data.users)) {
-                          setUsers(data.users);
-                      }
+      const beat = async () => {
+          try {
+              // 1. Announce Presence via API (Socket independent)
+              await fetch('/api/nearshare/session', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      socketId: socket?.id || 'rest-' + currentFp, // Fallback ID if socket dead
+                      networkHash: currentHash,
+                      displayName: currentName,
+                      fingerprint: currentFp
+                  })
+              });
+          } catch(e) { console.error("Heartbeat failed", e); }
+      };
+
+      // Initial Beat
+      beat();
+
+      // Periodic Beat (Keep active in DB)
+      const heartbeatInterval = setInterval(beat, 4000); // 4s heartbeat
+      
+      const pollInterval = setInterval(async () => {
+          try {
+              const res = await fetch(`/api/nearshare/room?room=${currentHash}`);
+              if (res.ok) {
+                  const data = await res.json();
+                  if (data.users && Array.isArray(data.users)) {
+                      setUsers(data.users);
                   }
-              } catch (e) {}
-          }, 3000); // 3s polling
+              }
+          } catch (e) {}
+      }, 3000); // 3s polling for peers
 
-          return () => clearInterval(poll);
-      }
-  }, [currentName, socket, currentHash, setUsers]);
+      return () => {
+          clearInterval(heartbeatInterval);
+          clearInterval(pollInterval);
+      };
+  }, [currentHash, currentName, currentFp, socket, setUsers]);
 
   return socket;
 };
