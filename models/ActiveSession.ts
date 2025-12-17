@@ -11,6 +11,8 @@ const ActiveSessionSchema: Schema = new Schema({
   socketId: { type: String, required: true, unique: true },
   networkHash: { type: String, required: true, index: true },
   displayName: { type: String, required: true },
+  fingerprint: { type: String },
+  lastActive: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now, expires: 3600 }, // TTL 1 hour
 });
 

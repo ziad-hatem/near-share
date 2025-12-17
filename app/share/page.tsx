@@ -2,14 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, User, Check, Wifi, ArrowDown, Send, MessageSquare, X, Smartphone, Activity, Clock, Minus, Maximize2, Zap, Shield, FileText, Image as ImageIcon, Music, Video, Edit2, Save } from 'lucide-react';
+import { Upload, X, Smartphone, Activity, Clock, Minus, Maximize2, Zap, Shield, FileText, Image as ImageIcon, Music, Video, Edit2, Save, ArrowDown, Send, MessageSquare, Wifi, LogOut } from 'lucide-react';
 import { useNearShareStore } from '../../store/useNearShareStore';
 import { useDiscovery } from '../../hooks/useDiscovery';
 import { useFileTransfer } from '../../hooks/useFileTransfer';
 import { cn } from '../../lib/utils';
+import Lobby from '../../components/Lobby';
 
 export default function SharePage() {
-  const { activeUsers, displayName, networkHash, socketId, messages, unreadMessages, setDisplayName, clearUnread } = useNearShareStore();
+  const { activeUsers, displayName, networkHash, socketId, messages, unreadMessages, setDisplayName, clearUnread, setNetworkHash } = useNearShareStore();
   useDiscovery();
   
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -18,6 +19,8 @@ export default function SharePage() {
   const [isminimized, setIsMinimized] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState('');
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+  const [joinTab, setJoinTab] = useState<'scan' | 'code' | 'share'>('scan');
   
   const { transferState, startSender, acceptFile, declineFile } = useFileTransfer(selectedUser || undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -53,6 +56,19 @@ export default function SharePage() {
       }
   };
   
+  const handleLogout = () => {
+      setNetworkHash(null); // Clears hash, kicks to lobby
+      localStorage.removeItem('nearshare_room'); // Clear persistent session
+      window.history.replaceState(null, '', '/share'); // Clear URL param
+  };
+  
+  // Persist Room Session
+  useEffect(() => {
+      if (networkHash) {
+          localStorage.setItem('nearshare_room', networkHash);
+      }
+  }, [networkHash]);
+
   // Clear unread when entering chat tab or selecting user
   useEffect(() => {
       if (selectedUser && activeTab === 'chat') {
@@ -90,33 +106,40 @@ export default function SharePage() {
       if (['mp3', 'wav'].includes(ext!)) return <Music className="w-8 h-8 text-cyan-400" />;
       return <FileText className="w-8 h-8 text-blue-400" />;
   };
+  
+  // MAIN RENDER
+  // If no networkHash, show Lobby
+  if (!networkHash) {
+      const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      const initialRoom = urlParams.get('room');
+      
+      return (
+            <div className="min-h-screen font-sans text-gray-100 selection:bg-cyan-500/30 selection:text-cyan-100 flex items-center justify-center relative overflow-hidden">
+             {/* Dynamic Background */}
+            <div className="fixed inset-0 -z-20 bg-[#0a0a0f]">
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-900/50 to-black/80"></div>
+            </div>
+             <Lobby 
+                 onJoin={(room) => {
+                     setNetworkHash(room);
+                     // If we had a room param, clean it up or keep it? Keeping it enables refresh to stay in room context (Lobby will auto-fill again if we reload)
+                     // But we want to feel "joined". 
+                     // Let's actually UPDATE the URL to reflect the room we just joined, so it is shareable
+                     const newUrl = new URL(window.location.href);
+                     newUrl.searchParams.set('room', room);
+                     window.history.pushState({}, '', newUrl.toString());
+                 }} 
+                 initialRoom={initialRoom}
+             />
+          </div>
+      );
+  }
 
   return (
     <div className="min-h-screen font-sans text-gray-100 selection:bg-cyan-500/30 selection:text-cyan-100 overflow-hidden relative">
       {/* Dynamic Background */}
       <div className="fixed inset-0 -z-20 bg-[#0a0a0f]">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-900/50 to-black/80"></div>
-        <motion.div 
-            animate={{ 
-                scale: [1, 1.2, 1],
-                opacity: [0.3, 0.5, 0.3],
-                x: [0, 50, 0],
-                y: [0, -30, 0]
-            }}
-            transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-            className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-purple-500/10 rounded-full blur-[120px]" 
-        />
-        <motion.div 
-            animate={{ 
-                scale: [1, 1.1, 1],
-                opacity: [0.2, 0.4, 0.2],
-                x: [0, -40, 0], 
-            }}
-            transition={{ duration: 12, repeat: Infinity, ease: "linear", delay: 2 }}
-            className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[100px]" 
-        />
-        {/* Grid Pattern Overlay */}
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-150 contrast-150 mix-blend-overlay pointer-events-none"></div>
       </div>
 
       {/* Header */}
@@ -141,44 +164,25 @@ export default function SharePage() {
             {/* Share Network (QR Code) - NEW */}
             {networkHash && (
                 <button 
-                  onClick={() => {
-                      const url = `${window.location.origin}/share?room=${networkHash}`;
-                      import('qrcode').then(QRCode => {
-                          QRCode.toDataURL(url, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
-                            .then(dataUrl => {
-                                // Create simple modal approach (or specific state)
-                                const win = window.open("", "_blank", "width=400,height=500");
-                                if(win) {
-                                    win.document.write(`
-                                        <body style="background:#111; color:white; font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0;">
-                                            <h2 style="margin-bottom:20px;">Scan to Join</h2>
-                                            <img src="${dataUrl}" style="border-radius:10px; border:4px solid white; box-shadow:0 0 20px rgba(0,255,255,0.5);" />
-                                            <p style="margin-top:20px; font-family:monospace; background:#222; padding:10px; border-radius:5px;">Code: ${networkHash.slice(0,6)}...</p>
-                                        </body>
-                                    `);
-                                }
-                            });
-                      });
-                  }}
+                  onClick={() => setIsJoinModalOpen(true)}
                   className="hidden md:flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white px-4 py-2 rounded-full font-bold shadow-lg shadow-emerald-900/20 active:scale-95 transition-all"
                 >
                     <Smartphone className="w-4 h-4" />
-                    <span className="text-xs uppercase tracking-wider">Share Net</span>
+                    <span className="text-xs uppercase tracking-wider">Join / Share</span>
                 </button>
             )}
 
             {/* Network ID Display */}
             {networkHash && (
                 <div className="hidden md:flex flex-col items-end mr-4">
-                    <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Network ID</span>
-                    <div className="flex items-center gap-2 group cursor-pointer" onClick={() => { 
-                         const newCode = prompt("Enter Manual Network Code (Shared with peers):", networkHash);
-                         if (newCode) useNearShareStore.getState().setNetworkHash(newCode);
-                    }}>
-                        <span className="text-xs font-mono text-cyan-500/80 group-hover:text-cyan-400 transition-colors">
-                            {networkHash.slice(0, 12)}...
+                     <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Room</span>
+                        <button onClick={handleLogout} className="text-red-400 hover:text-red-300 transition-colors" title="Leave Room"><LogOut className="w-3 h-3" /></button>
+                     </div>
+                    <div className="flex items-center gap-2 group cursor-pointer">
+                        <span className="text-sm font-bold font-mono text-cyan-400 transition-colors tracking-widest">
+                            {networkHash}
                         </span>
-                        <Edit2 className="w-3 h-3 text-gray-600 group-hover:text-cyan-400 opacity-0 group-hover:opacity-100 transition-all" />
                     </div>
                 </div>
             )}
@@ -604,6 +608,131 @@ export default function SharePage() {
             </motion.div>
          )}
       </AnimatePresence>
+
+         {/* JOIN / SHARE MODAL */}
+         <AnimatePresence>
+            {isJoinModalOpen && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md"
+                    onClick={(e) => {
+                         if (e.target === e.currentTarget) setIsJoinModalOpen(false);
+                    }}
+                >
+                    <motion.div
+                        initial={{ scale: 0.9, y: 20 }}
+                        animate={{ scale: 1, y: 0 }}
+                        exit={{ scale: 0.9, y: 20 }}
+                        className="bg-[#12121a] border border-white/10 w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+                    >
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                            <h3 className="text-xl font-bold text-white">Connect Device</h3>
+                            <button onClick={() => setIsJoinModalOpen(false)}><X className="w-6 h-6 text-gray-400 hover:text-white" /></button>
+                        </div>
+
+                        {/* Tabs */}
+                        <div className="flex p-2 bg-black/40">
+                            {['scan', 'code', 'share'].map((t) => (
+                                <button 
+                                    key={t}
+                                    onClick={() => setJoinTab(t as any)}
+                                    className={cn(
+                                        "flex-1 py-3 text-sm font-bold uppercase tracking-wider rounded-xl transition-all",
+                                        joinTab === t ? "bg-cyan-500 text-black shadow-lg shadow-cyan-500/20" : "text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                                    )}
+                                >
+                                    {t === 'scan' ? 'Scan QR' : (t === 'code' ? 'Enter Code' : 'Share QR')}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-8 flex-1 overflow-y-auto min-h-[400px] flex flex-col items-center justify-center text-center">
+                            {joinTab === 'scan' && (
+                                <div className="w-full">
+                                    <div className="aspect-square bg-black rounded-2xl overflow-hidden border border-white/10 relative">
+                                        <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
+                                            Loading Camera...
+                                        </div>
+                                         {/* Dynamic import hack for browser-only lib */}
+                                         {(() => {
+                                            const QRScanner = require('../../components/QRScanner').default;
+                                            return <QRScanner 
+                                                onScan={(text: string) => {
+                                                    // Handle URL or raw code
+                                                    try {
+                                                        const url = new URL(text);
+                                                        const room = url.searchParams.get('room');
+                                                        if (room) {
+                                                            useNearShareStore.getState().setNetworkHash(room);
+                                                            setIsJoinModalOpen(false);
+                                                            alert(`Joined Network: ${room.slice(0,6)}...`);
+                                                        }
+                                                    } catch (e) {
+                                                        // Fallback: assume raw code
+                                                        useNearShareStore.getState().setNetworkHash(text);
+                                                        setIsJoinModalOpen(false);
+                                                        alert(`Joined Network: ${text.slice(0,6)}...`);
+                                                    }
+                                                }} 
+                                            />
+                                         })()}
+                                    </div>
+                                    <p className="mt-6 text-gray-400 text-sm">Point camera at another device's "Share QR" screen.</p>
+                                </div>
+                            )}
+
+                            {joinTab === 'code' && (
+                                <div className="w-full">
+                                    <h4 className="text-lg font-bold text-white mb-6">Manual Entry</h4>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Enter Network ID" 
+                                        className="w-full bg-black/50 border border-white/10 rounded-xl px-5 py-4 text-center text-xl font-mono text-cyan-400 focus:outline-none focus:border-cyan-500 transition-colors mb-6"
+                                        defaultValue={networkHash || ''}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                useNearShareStore.getState().setNetworkHash(e.currentTarget.value);
+                                                setIsJoinModalOpen(false);
+                                            }
+                                        }}
+                                    />
+                                    <p className="text-gray-500 text-sm">Enter the code displayed on the other device.</p>
+                                </div>
+                            )}
+
+                            {joinTab === 'share' && networkHash && (
+                                <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                                    <div className="bg-white p-4 rounded-xl shadow-2xl mb-6">
+                                       <img
+                                            src=""
+                                            ref={(img) => {
+                                                if (img && !img.src) {
+                                                     const url = `${window.location.origin}/share?room=${networkHash}`;
+                                                     import('qrcode').then(QRCode => {
+                                                        QRCode.toDataURL(url, { width: 300, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
+                                                            .then(d => img.src = d);
+                                                     });
+                                                }
+                                            }}
+                                            className="w-64 h-64 block"
+                                            alt="Network QR"
+                                       />
+                                    </div>
+                                    <p className="font-mono text-cyan-400 text-3xl tracking-[0.2em] font-bold bg-cyan-500/10 px-6 py-4 rounded-xl border border-cyan-500/20 mb-2 select-all shadow-[0_0_30px_rgba(34,211,238,0.2)]">
+                                        {networkHash}
+                                    </p>
+                                    <p className="text-gray-500 text-xs uppercase tracking-wider font-bold">Network ID</p>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+         </AnimatePresence>
     </div>
   );
 }

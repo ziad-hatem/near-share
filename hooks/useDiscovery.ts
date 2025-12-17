@@ -31,63 +31,43 @@ export const useDiscovery = () => {
     initialized.current = true;
 
     const init = async () => {
-      try {
-        // Check for ?room= override
-        const urlParams = new URLSearchParams(window.location.search);
-        const roomFromUrl = urlParams.get('room');
+       // 1. Check LocalStorage for persistent session
+       if (typeof window !== 'undefined') {
+           const storedRoom = localStorage.getItem('nearshare_room');
+           if (storedRoom) {
+               useNearShareStore.getState().setNetworkHash(storedRoom);
+           }
+       }
 
-        let hash;
-        if (roomFromUrl) {
-            hash = roomFromUrl;
-        } else {
-            const res = await fetch('/api/nearshare/ip');
-            const { ip } = await res.json();
-            hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ip))
-              .then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
-        }
+       await fetch('/api/socket');
+       
+       // 2. Init Identity (Restore missing logic)
+       let name = localStorage.getItem(STORAGE_KEY_NAME);
+       if (!name) {
+           name = uniqueNamesGenerator({ dictionaries: [adjectives, colors, animals], separator: '-' });
+           localStorage.setItem(STORAGE_KEY_NAME, name);
+       }
+       setDisplayName(name);
 
-        setNetworkHash(hash); // Set initial hash
+       let fp = localStorage.getItem(STORAGE_KEY_FP);
+       if (!fp) {
+           fp = Math.random().toString(36).substring(2, 15);
+           localStorage.setItem(STORAGE_KEY_FP, fp);
+       }
+       setFingerprint(fp);
 
-        let storedName = localStorage.getItem(STORAGE_KEY_NAME);
-        let storedFp = localStorage.getItem(STORAGE_KEY_FP);
+       const newSocket = io({ path: '/socket.io', reconnectionAttempts: 5 });
+       setSocket(newSocket);
 
-        if (!storedFp) {
-            storedFp = crypto.randomUUID();
-            localStorage.setItem(STORAGE_KEY_FP, storedFp);
-        }
-        
-        if (!storedName) {
-             storedName = uniqueNamesGenerator({
-                dictionaries: [adjectives, colors, animals],
-                separator: ' ',
-                style: 'capital',
-            });
-            localStorage.setItem(STORAGE_KEY_NAME, storedName);
-        }
-
-        setFingerprint(storedFp);
-        setDisplayName(storedName);
-
-        await fetch('/api/socket');
-
-        const newSocket = io({
-          path: '/socket.io',
-          reconnectionAttempts: 5,
-        });
-        
-        setSocket(newSocket);
-
-        newSocket.on('connect', () => {
-          console.log('Socket Connected', newSocket.id);
-          // Set initial self state mostly for ID.
-          // Discovery active waits for room join
-        });
-
-        newSocket.on('room-update', (users: any[]) => {
-          setUsers(users);
-        });
-        
-        newSocket.on('private-message', (data: { content: string, from: string }) => {
+       newSocket.on('connect', () => { console.log('Socket Connected', newSocket.id); });
+       newSocket.on('room-update', (users: any) => { 
+           console.log("Room Update:", users);
+           if (Array.isArray(users)) setUsers(users);
+           else if (users && Array.isArray(users.users)) setUsers(users.users);
+           else console.warn("Invalid room-update format:", users);
+       });
+       
+       newSocket.on('private-message', (data: { content: string, from: string }) => {
              addMessage({
                 id: Date.now().toString(),
                 senderId: data.from,
@@ -112,17 +92,12 @@ export const useDiscovery = () => {
                 oscillator.stop(context.currentTime + 0.1);
             } catch (e) {}
         });
-
-      } catch (err) {
-        console.error("Discovery failed", err);
-      }
     };
 
     init();
-  }, [socket, setSocket, setUsers, setNetworkHash, setFingerprint, setDisplayName, addMessage, incrementUnread]);
+  }, [socket, setSocket, setUsers, addMessage, incrementUnread]);
   
-  // 2. Room Management: Join when socket + hash + name + fp are ready
-  // Also re-join if hash changes (Manual override)
+  // 2. Room Management: Join ONLY when hash is explicitly set (by Lobby or URL)
   useEffect(() => {
       if (socket && socket.connected && currentHash && currentName && currentFp) {
           console.log("Joining Network Room:", currentHash);
@@ -138,13 +113,33 @@ export const useDiscovery = () => {
       }
   }, [socket, currentHash, currentName, currentFp, setIsDiscoveryActive, setMyself]);
 
-  // 3. Update Sync
+  // 3. Update Sync & Polling Fallback
   useEffect(() => {
       if (socket && currentName) {
           localStorage.setItem(STORAGE_KEY_NAME, currentName);
           socket.emit('update-user', { displayName: currentName });
       }
-  }, [currentName, socket]);
+
+      // Polling fallback for Vercel/Serverless environments where sockets might split
+      // We only poll if we have a hash and users, checking the socket state isn't enough?
+      if (currentHash) {
+          const poll = setInterval(async () => {
+              try {
+                  const res = await fetch(`/api/nearshare/room?room=${currentHash}`);
+                  if (res.ok) {
+                      const data = await res.json();
+                      if (Array.isArray(data)) {
+                          setUsers(data);
+                      } else if (data.users && Array.isArray(data.users)) {
+                          setUsers(data.users);
+                      }
+                  }
+              } catch (e) {}
+          }, 3000); // 3s polling
+
+          return () => clearInterval(poll);
+      }
+  }, [currentName, socket, currentHash, setUsers]);
 
   return socket;
 };

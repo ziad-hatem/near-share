@@ -37,12 +37,32 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseWithSocket) => {
               if (room !== socket.id) socket.leave(room);
           });
 
+          // 1. Store data on socket instance (In-Memory Speed)
+          console.log(`[Socket] JOIN REQUEST: ${socket.id} -> Room: ${networkHash} (Name: ${displayName})`);
+          
+          socket.data.displayName = displayName;
+          socket.data.networkHash = networkHash;
+          socket.data.fingerprint = fingerprint;
+
           socket.join(networkHash);
           
+          // 2. Immediate Broadcast to Room
+          const sockets = await io.in(networkHash).fetchSockets();
+          console.log(`[Socket] In-Memory Sockets in ${networkHash}: ${sockets.length}`);
+          
+          const inMemoryUsers = sockets.map(s => ({
+              socketId: s.id,
+              displayName: s.data.displayName,
+              networkHash: s.data.networkHash,
+              fingerprint: s.data.fingerprint
+          }));
+          io.to(networkHash).emit("room-update", inMemoryUsers);
+          
+          // 3. Persist Async
           try {
+              console.log(`[Socket] Attempting DB Save for ${socket.id}...`);
               await dbConnect();
-              
-              const session = await ActiveSession.findOneAndUpdate(
+              const saved = await ActiveSession.findOneAndUpdate(
                   { socketId: socket.id },
                   { 
                       socketId: socket.id, 
@@ -53,12 +73,9 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseWithSocket) => {
                   },
                   { upsert: true, new: true }
               );
-              
-              const roomUsers = await ActiveSession.find({ networkHash });
-              io.to(networkHash).emit("room-update", roomUsers);
-              
+              console.log(`[Socket] DB Save Success: ${saved ? 'YES' : 'NO'}`);
           } catch (e) {
-              console.error("DB Error on join", e);
+              console.error("[Socket] DB CRITICAL FAILURE:", e);
           }
       });
       
@@ -92,14 +109,23 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseWithSocket) => {
 
       socket.on("disconnect", async () => {
           console.log("Client disconnected", socket.id);
+          
+          // 1. Immediate Broadcast (In-Memory)
+          if (socket.data.networkHash) {
+              const sockets = await io.in(socket.data.networkHash).fetchSockets();
+              const inMemoryUsers = sockets.map(s => ({
+                  socketId: s.id,
+                  displayName: s.data.displayName,
+                  networkHash: s.data.networkHash,
+                  fingerprint: s.data.fingerprint
+              }));
+              io.to(socket.data.networkHash).emit("room-update", inMemoryUsers);
+          }
+
+          // 2. Cleanup DB Async
           try {
               await dbConnect();
-              const session = await ActiveSession.findOneAndDelete({ socketId: socket.id });
-              
-              if (session) {
-                  const roomUsers = await ActiveSession.find({ networkHash: session.networkHash });
-                  io.to(session.networkHash).emit("room-update", roomUsers);
-              }
+              await ActiveSession.findOneAndDelete({ socketId: socket.id });
           } catch (e) {
               console.error("Disconnect error", e);
           }
