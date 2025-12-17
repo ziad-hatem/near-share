@@ -61,31 +61,10 @@ export const useDiscovery = () => {
        // setIsDiscoveryActive(true); -- Handled by heartbeat presence
 
        
-       newSocket.on('private-message', (data: { content: string, from: string }) => {
-             addMessage({
-                id: Date.now().toString(),
-                senderId: data.from,
-                content: data.content,
-                timestamp: Date.now(),
-                isMe: false
-            });
-            incrementUnread(data.from);
-            try {
-                const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-                if (context.state === 'suspended') context.resume();
-                const oscillator = context.createOscillator();
-                const gainNode = context.createGain();
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(800, context.currentTime); 
-                oscillator.frequency.exponentialRampToValueAtTime(400, context.currentTime + 0.1); 
-                gainNode.gain.setValueAtTime(0.1, context.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.1);
-                oscillator.connect(gainNode);
-                gainNode.connect(context.destination);
-                oscillator.start();
-                oscillator.stop(context.currentTime + 0.1);
-            } catch (e) {}
-        });
+       
+       // Sockets Removed - Pure REST Implementation
+       // Message handling is now done via the pollMessages interval below.
+
     };
 
     init();
@@ -156,6 +135,65 @@ export const useDiscovery = () => {
           clearInterval(pollInterval);
       };
   }, [currentHash, currentName, currentFp, socket, setUsers]);
+
+  // 4. Message Polling (Replaces Socket Listeners)
+  useEffect(() => {
+      if (!currentHash || !currentName || !currentFp) return;
+
+      let lastTimestamp = Date.now();
+
+      const pollMessages = async () => {
+          try {
+              // Fix: Recipient ID must match what sender uses (rest-fingerprint)
+              // If we only use fingerprint, we miss messages sent to our "Socket ID"
+              const myId = 'rest-' + currentFp;
+              
+              const res = await fetch(`/api/nearshare/messages?room=${currentHash}&recipient=${myId}&since=${lastTimestamp}`);
+              if (res.ok) {
+                  const messages = await res.json();
+                  if (Array.isArray(messages) && messages.length > 0) {
+                      // Update timestamp to last received message
+                      lastTimestamp = messages[messages.length - 1].timestamp;
+
+                      messages.forEach((msg: any) => {
+                          if (msg.type === 'chat' && msg.sender !== currentName) { // Don't process own echo
+                              const messageId = msg._id || Date.now().toString();
+                              
+                              addMessage({
+                                  id: messageId,
+                                  senderId: msg.sender, // Using name as ID for simplicity in REST
+                                  content: msg.content,
+                                  timestamp: msg.timestamp,
+                                  isMe: false
+                              });
+                              incrementUnread(msg.sender);
+                              
+                              // Play Sound
+                              try {
+                                  const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+                                  if (context.state === 'suspended') context.resume();
+                                  const oscillator = context.createOscillator();
+                                  const gainNode = context.createGain();
+                                  oscillator.type = 'sine';
+                                  oscillator.frequency.setValueAtTime(800, context.currentTime); 
+                                  oscillator.frequency.exponentialRampToValueAtTime(400, context.currentTime + 0.1); 
+                                  gainNode.gain.setValueAtTime(0.1, context.currentTime);
+                                  gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.1);
+                                  oscillator.connect(gainNode);
+                                  gainNode.connect(context.destination);
+                                  oscillator.start();
+                                  oscillator.stop(context.currentTime + 0.1);
+                              } catch (e) {}
+                          }
+                      });
+                  }
+              }
+          } catch (e) { console.error("Message poll error", e); }
+      };
+
+      const interval = setInterval(pollMessages, 2000); // 2s Polling for Chat
+      return () => clearInterval(interval);
+  }, [currentHash, currentName, currentFp, addMessage, incrementUnread]);
 
   return socket;
 };

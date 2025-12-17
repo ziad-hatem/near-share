@@ -25,7 +25,7 @@ export default function SharePage() {
   const { transferState, startSender, acceptFile, declineFile } = useFileTransfer(selectedUser || undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { socket, addMessage } = useNearShareStore();
+  const { addMessage } = useNearShareStore();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0] && selectedUser) {
@@ -33,11 +33,13 @@ export default function SharePage() {
     }
   };
 
-  const handleSendText = (e: React.FormEvent) => {
+  const handleSendText = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (textInput.trim() && selectedUser && socket) {
-          // sendText(textInput); // Old P2P
-          socket.emit('private-message', { content: textInput, to: selectedUser });
+      
+      const myself = useNearShareStore.getState().myself;
+      if (textInput.trim() && selectedUser && myself) {
+          
+          // Optimistic UI Update
           addMessage({
               id: Date.now().toString(),
               senderId: 'me',
@@ -45,7 +47,23 @@ export default function SharePage() {
               timestamp: Date.now(),
               isMe: true
           });
+          
+          const msgContent = textInput;
           setTextInput('');
+
+          try {
+              await fetch('/api/nearshare/messages', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      room: myself.networkHash,
+                      sender: myself.socketId || 'rest-' + useNearShareStore.getState().fingerprint,
+                      recipient: selectedUser,
+                      type: 'chat',
+                      content: msgContent
+                  })
+              });
+          } catch (e) { console.error("Send failed", e); }
       }
   };
   

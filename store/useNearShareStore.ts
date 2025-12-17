@@ -27,6 +27,7 @@ interface NearShareState {
   
   // Identity
   fingerprint: string | null;
+  myself: { socketId: string, networkHash: string, displayName: string } | null;
 
   // Actions
   setSocket: (socket: any) => void;
@@ -53,10 +54,12 @@ export const useNearShareStore = create<NearShareState>((set) => ({
   messages: [],
   unreadMessages: {},
   fingerprint: null,
+  myself: null,
 
   setSocket: (socket) => set({ socket }),
   setUsers: (users) => set({ activeUsers: users }),
   setMyself: (data) => set({ 
+    myself: data,
     socketId: data.socketId, 
     networkHash: data.networkHash, 
     displayName: data.displayName 
