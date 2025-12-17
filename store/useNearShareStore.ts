@@ -40,6 +40,7 @@ interface NearShareState {
   // New actions
   setFingerprint: (fp: string) => void;
   setDisplayName: (name: string) => void;
+  setNetworkHash: (hash: string) => void;
 }
 
 export const useNearShareStore = create<NearShareState>((set) => ({
@@ -76,4 +77,5 @@ export const useNearShareStore = create<NearShareState>((set) => ({
   
   setFingerprint: (fingerprint) => set({ fingerprint }),
   setDisplayName: (displayName) => set({ displayName }),
+  setNetworkHash: (networkHash) => set({ networkHash }),
 }));

@@ -32,6 +32,11 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseWithSocket) => {
           const { networkHash, displayName, fingerprint } = data;
           if (!networkHash) return;
 
+          // Leave previous rooms (except socket.id) to allow switching networks
+          socket.rooms.forEach((room) => {
+              if (room !== socket.id) socket.leave(room);
+          });
+
           socket.join(networkHash);
           
           try {

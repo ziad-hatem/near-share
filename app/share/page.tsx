@@ -120,7 +120,7 @@ export default function SharePage() {
       </div>
 
       {/* Header */}
-      <header className="px-6 py-6 sm:px-12 flex justify-between items-center relative z-10">
+      <header className="px-6 py-6 sm:px-12 flex justify-between items-center relative z-10 flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center backdrop-blur-md shadow-lg shadow-black/20">
@@ -137,33 +137,51 @@ export default function SharePage() {
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center gap-4 bg-white/5 px-2 pl-6 py-2 rounded-full border border-white/10 backdrop-blur-md shadow-xl hover:bg-white/10 transition-colors group">
-           <div className="flex flex-col items-end">
-               <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Your Device</span>
-               {isEditingName ? (
-                   <div className="flex items-center gap-2">
-                       <input 
-                            autoFocus
-                            type="text" 
-                            value={tempName} 
-                            onChange={e => setTempName(e.target.value)}
-                            onBlur={handleSaveName}
-                            onKeyDown={e => e.key === 'Enter' && handleSaveName()}
-                            className="bg-transparent border-b border-cyan-500 text-sm font-semibold text-white focus:outline-none w-32"
-                       />
-                       <button onClick={handleSaveName}><Save className="w-3 h-3 text-cyan-400" /></button>
-                   </div>
-               ) : (
-                   <div className="flex items-center gap-2 group cursor-pointer" onClick={() => { setIsEditingName(true); setTempName(displayName || ''); }}>
-                       <span className="text-sm font-semibold text-gray-200 group-hover:text-cyan-400 transition-colors">{displayName || 'Identifying...'}</span>
-                       <Edit2 className="w-3 h-3 text-gray-600 group-hover:text-cyan-400 transition-colors" />
-                   </div>
-               )}
-           </div>
-           <div className="h-8 w-px bg-white/10 mx-2" />
-           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white shadow-inner">
-               <span className="text-sm font-bold">{displayName?.charAt(0)}</span>
-           </div>
+        <div className="flex items-center gap-4">
+            {/* Network ID Display */}
+            {networkHash && (
+                <div className="hidden md:flex flex-col items-end mr-4">
+                    <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Network ID</span>
+                    <div className="flex items-center gap-2 group cursor-pointer" onClick={() => { 
+                         const newCode = prompt("Enter Manual Network Code (Shared with peers):", networkHash);
+                         if (newCode) useNearShareStore.getState().setNetworkHash(newCode);
+                    }}>
+                        <span className="text-xs font-mono text-cyan-500/80 group-hover:text-cyan-400 transition-colors">
+                            {networkHash.slice(0, 12)}...
+                        </span>
+                        <Edit2 className="w-3 h-3 text-gray-600 group-hover:text-cyan-400 opacity-0 group-hover:opacity-100 transition-all" />
+                    </div>
+                </div>
+            )}
+
+            <div className="flex items-center gap-4 bg-white/5 px-2 pl-6 py-2 rounded-full border border-white/10 backdrop-blur-md shadow-xl hover:bg-white/10 transition-colors group">
+            <div className="flex flex-col items-end">
+                <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Your Device</span>
+                {isEditingName ? (
+                    <div className="flex items-center gap-2">
+                        <input 
+                                autoFocus
+                                type="text" 
+                                value={tempName} 
+                                onChange={e => setTempName(e.target.value)}
+                                onBlur={handleSaveName}
+                                onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+                                className="bg-transparent border-b border-cyan-500 text-sm font-semibold text-white focus:outline-none w-32"
+                        />
+                        <button onClick={handleSaveName}><Save className="w-3 h-3 text-cyan-400" /></button>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-2 group cursor-pointer" onClick={() => { setIsEditingName(true); setTempName(displayName || ''); }}>
+                        <span className="text-sm font-semibold text-gray-200 group-hover:text-cyan-400 transition-colors">{displayName || 'Identifying...'}</span>
+                        <Edit2 className="w-3 h-3 text-gray-600 group-hover:text-cyan-400 transition-colors" />
+                    </div>
+                )}
+            </div>
+            <div className="h-8 w-px bg-white/10 mx-2" />
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white shadow-inner">
+                <span className="text-sm font-bold">{displayName?.charAt(0)}</span>
+            </div>
+            </div>
         </div>
       </header>
 

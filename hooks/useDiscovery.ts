@@ -15,14 +15,17 @@ export const useDiscovery = () => {
       socket,
       setFingerprint,
       setDisplayName,
+      setNetworkHash,
       addMessage,
       incrementUnread,
       displayName: currentName,
-      fingerprint: currentFp
+      fingerprint: currentFp,
+      networkHash: currentHash
   } = useNearShareStore();
   
   const initialized = useRef(false);
 
+  // 1. Init: Fetch IP, Names, Fingerprint, Connect Socket
   useEffect(() => {
     if (initialized.current || socket) return; 
     initialized.current = true;
@@ -32,11 +35,11 @@ export const useDiscovery = () => {
         const res = await fetch('/api/nearshare/ip');
         const { ip } = await res.json();
         
-        // Simple hash of IP to create room ID
-        const networkHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ip))
+        const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ip))
           .then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
 
-        // Fingerprint & Name Persistence
+        setNetworkHash(hash); // Set initial hash
+
         let storedName = localStorage.getItem(STORAGE_KEY_NAME);
         let storedFp = localStorage.getItem(STORAGE_KEY_FP);
 
@@ -57,10 +60,8 @@ export const useDiscovery = () => {
         setFingerprint(storedFp);
         setDisplayName(storedName);
 
-        // API Route Initialization (Serverless Pattern)
         await fetch('/api/socket');
 
-        // Connect to Socket
         const newSocket = io({
           path: '/socket.io',
           reconnectionAttempts: 5,
@@ -70,18 +71,8 @@ export const useDiscovery = () => {
 
         newSocket.on('connect', () => {
           console.log('Socket Connected', newSocket.id);
-          
-          if (newSocket.id) {
-             setMyself({ socketId: newSocket.id, networkHash, displayName: storedName! });
-             
-             // Join Room with Fingerprint logic if valid?
-             newSocket.emit('join-room', { 
-                 networkHash, 
-                 displayName: storedName,
-                 fingerprint: storedFp 
-             });
-             setIsDiscoveryActive(true);
-          }
+          // Set initial self state mostly for ID.
+          // Discovery active waits for room join
         });
 
         newSocket.on('room-update', (users: any[]) => {
@@ -89,7 +80,6 @@ export const useDiscovery = () => {
         });
         
         newSocket.on('private-message', (data: { content: string, from: string }) => {
-            console.log("Received message from", data.from);
              addMessage({
                 id: Date.now().toString(),
                 senderId: data.from,
@@ -98,10 +88,9 @@ export const useDiscovery = () => {
                 isMe: false
             });
             incrementUnread(data.from);
-            
-            // Simple sound
             try {
                 const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+                if (context.state === 'suspended') context.resume();
                 const oscillator = context.createOscillator();
                 const gainNode = context.createGain();
                 oscillator.type = 'sine';
@@ -115,10 +104,6 @@ export const useDiscovery = () => {
                 oscillator.stop(context.currentTime + 0.1);
             } catch (e) {}
         });
-        
-        newSocket.on('signal', (data) => {
-           // Debug signal
-        });
 
       } catch (err) {
         console.error("Discovery failed", err);
@@ -126,14 +111,29 @@ export const useDiscovery = () => {
     };
 
     init();
-  }, [socket, setSocket, setUsers, setMyself, setIsDiscoveryActive, setFingerprint, setDisplayName, addMessage, incrementUnread]);
+  }, [socket, setSocket, setUsers, setNetworkHash, setFingerprint, setDisplayName, addMessage, incrementUnread]);
   
-  // Update name if changed in store
+  // 2. Room Management: Join when socket + hash + name + fp are ready
+  // Also re-join if hash changes (Manual override)
+  useEffect(() => {
+      if (socket && socket.connected && currentHash && currentName && currentFp) {
+          console.log("Joining Network Room:", currentHash);
+          
+          socket.emit('join-room', { 
+             networkHash: currentHash, 
+             displayName: currentName,
+             fingerprint: currentFp 
+          });
+          
+          setMyself({ socketId: socket.id, networkHash: currentHash, displayName: currentName });
+          setIsDiscoveryActive(true);
+      }
+  }, [socket, currentHash, currentName, currentFp, setIsDiscoveryActive, setMyself]);
+
+  // 3. Update Sync
   useEffect(() => {
       if (socket && currentName) {
           localStorage.setItem(STORAGE_KEY_NAME, currentName);
-          // Emit update to server if different from initial?
-          // For now, assum join-room sets it, but if we edit it live:
           socket.emit('update-user', { displayName: currentName });
       }
   }, [currentName, socket]);
