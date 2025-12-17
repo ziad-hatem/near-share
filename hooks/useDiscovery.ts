@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
 import { useNearShareStore } from '../store/useNearShareStore';
 import { uniqueNamesGenerator, adjectives, animals, colors } from 'unique-names-generator';
 
@@ -56,16 +55,11 @@ export const useDiscovery = () => {
        }
        setFingerprint(fp);
 
-       const newSocket = io({ path: '/socket.io', reconnectionAttempts: 5 });
-       setSocket(newSocket);
+       
+       // Sockets Removed - Pure REST Implementation
+       // setSocket(null); 
+       // setIsDiscoveryActive(true); -- Handled by heartbeat presence
 
-       newSocket.on('connect', () => { console.log('Socket Connected', newSocket.id); });
-       newSocket.on('room-update', (users: any) => { 
-           console.log("Room Update:", users);
-           if (Array.isArray(users)) setUsers(users);
-           else if (users && Array.isArray(users.users)) setUsers(users.users);
-           else console.warn("Invalid room-update format:", users);
-       });
        
        newSocket.on('private-message', (data: { content: string, from: string }) => {
              addMessage({
@@ -135,6 +129,12 @@ export const useDiscovery = () => {
 
       // Initial Beat
       beat();
+
+      // Set "Myself" active immediately since we don't have socket connect event anymore
+      if (currentHash && currentName) {
+           setMyself({ socketId: 'rest-' + currentFp, networkHash: currentHash, displayName: currentName });
+           setIsDiscoveryActive(true);
+      }
 
       // Periodic Beat (Keep active in DB)
       const heartbeatInterval = setInterval(beat, 4000); // 4s heartbeat

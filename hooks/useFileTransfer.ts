@@ -20,7 +20,7 @@ const NOTIFICATION_SOUND = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAA
 
 export const useFileTransfer = (targetSocketId?: string) => {
   const [transferState, setTransferState] = useState<TransferState>({ progress: 0, status: 'idle' });
-  const socket = useNearShareStore(state => state.socket);
+  // const socket = useNearShareStore(state => state.socket); // Removed
   const addMessage = useNearShareStore(state => state.addMessage);
   const incrementUnread = useNearShareStore(state => state.incrementUnread);
 
@@ -54,27 +54,49 @@ export const useFileTransfer = (targetSocketId?: string) => {
       } catch (e) { console.error("Audio error", e); }
   };
 
+  // 1. Poll for Signals (REST Implementation)
   useEffect(() => {
-    if (!socket) return;
+    
+    // We poll if we have a self-ID (which we get from store or mock if needed)
+    // Actually we need the 'myself' object from store to know our ID/Fingerprint
+    const myself = useNearShareStore.getState().myself;
+    if (!myself) return;
 
-    const handleSignal = (data: { signal: any; from: string }) => {
-      console.log("signal from", data.from);
+    let lastTimestamp = Date.now();
 
-      if (!peerRef.current) {
-         startReceiver(data.from, data.signal, socket);
-      } else {
-         if (peerRef.current && !peerRef.current.destroyed) {
-             peerRef.current.signal(data.signal);
-         }
-      }
+    const pollSignals = async () => {
+        try {
+            const res = await fetch(`/api/nearshare/messages?room=${myself.networkHash}&recipient=${myself.socketId || 'rest-' + useNearShareStore.getState().fingerprint}&since=${lastTimestamp}`);
+            if (res.ok) {
+                const messages = await res.json();
+                if (Array.isArray(messages) && messages.length > 0) {
+                    lastTimestamp = messages[messages.length - 1].timestamp;
+                    
+                    messages.forEach((msg: any) => {
+                        if (msg.type === 'signal') {
+                            console.log("signal from", msg.sender);
+                            const signalData = msg.content; // Content is the signal object
+                            
+                            if (!peerRef.current) {
+                                startReceiver(msg.sender, signalData);
+                            } else {
+                                if (peerRef.current && !peerRef.current.destroyed) {
+                                    peerRef.current.signal(signalData);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        } catch (e) { }
     };
 
-    socket.on('signal', handleSignal);
+    const interval = setInterval(pollSignals, 1000); // 1s Polling for Signaling (Aggressive)
+    return () => clearInterval(interval);
+  }, []); // Run once on mount, or dep on myself changes? 
+  // Better to dep on myself existence. However myself might change.
+  // Ideally we passed myself ID into hook or getting from store inside effect.
 
-    return () => {
-      socket.off('signal', handleSignal);
-    };
-  }, [socket]);
 
   const sendText = (text: string) => {
       if (peerRef.current && peerRef.current.connected) {
@@ -108,7 +130,7 @@ export const useFileTransfer = (targetSocketId?: string) => {
   };
 
   const startSender = (file: File) => {
-    if (!socket || !targetSocketId) return;
+    if (!targetSocketId) return;
 
     statsRef.current = { startTime: 0, lastBytes: 0, lastTime: 0 };
     setTransferState({ status: 'waiting', progress: 0, fileName: file.name, fileSize: file.size });
@@ -122,10 +144,21 @@ export const useFileTransfer = (targetSocketId?: string) => {
       trickle: false, 
     });
 
-    peer.on('signal', (signal) => {
-      socket.emit('signal', {
-        signal,
-        to: targetSocketId
+    peer.on('signal', async (signal) => {
+      // REST Signal Send
+      const myself = useNearShareStore.getState().myself;
+      if (!myself) return;
+
+      await fetch('/api/nearshare/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              room: myself.networkHash,
+              sender: myself.socketId || 'rest-' + useNearShareStore.getState().fingerprint,
+              recipient: targetSocketId,
+              type: 'signal',
+              content: signal
+          })
       });
     });
 
@@ -227,7 +260,7 @@ export const useFileTransfer = (targetSocketId?: string) => {
       readNextChunk();
   };
 
-  const startReceiver = (senderId: string, initialSignal: any, socket: any) => {
+  const startReceiver = (senderId: string, initialSignal: any) => {
       const peer = new SimplePeer({
           initiator: false,
           trickle: false
@@ -235,10 +268,21 @@ export const useFileTransfer = (targetSocketId?: string) => {
 
       peer.signal(initialSignal);
 
-      peer.on('signal', (signal) => {
-          socket.emit('signal', {
-              signal,
-              to: senderId
+      peer.on('signal', async (signal) => {
+          // REST Signal Reply
+          const myself = useNearShareStore.getState().myself;
+          if (!myself) return;
+
+           await fetch('/api/nearshare/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  room: myself.networkHash,
+                  sender: myself.socketId || 'rest-' + useNearShareStore.getState().fingerprint,
+                  recipient: senderId,
+                  type: 'signal',
+                  content: signal
+              })
           });
       });
       
